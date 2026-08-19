@@ -448,6 +448,11 @@ button {
   color: var(--text-dim);
 }
 
+.tag-success {
+  color: #8fd6b0;
+  border-color: rgba(143, 214, 176, 0.4);
+}
+
 /* Table */
 .table-wrap {
   overflow-x: auto;

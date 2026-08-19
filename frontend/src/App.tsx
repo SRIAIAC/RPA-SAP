@@ -5,6 +5,7 @@ import AdminPage from "./pages/Admin";
 import Dashboard from "./pages/Dashboard";
 import ExceptionsPage from "./pages/Exceptions";
 import Login from "./pages/Login";
+import MailroomPage from "./pages/Mailroom";
 import RunDetail from "./pages/RunDetail";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -31,6 +32,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="runs/:runId" element={<RunDetail />} />
         <Route path="exceptions" element={<ExceptionsPage />} />
+        <Route path="mailroom" element={<MailroomPage />} />
         <Route path="admin" element={<AdminPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

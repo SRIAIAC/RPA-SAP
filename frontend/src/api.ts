@@ -121,4 +121,50 @@ export function setUserAccess(userId: number, workflow_ids: number[]): Promise<n
   });
 }
 
+export interface MailMessageListItem {
+  id: number;
+  sender: string;
+  sender_name: string;
+  subject: string;
+  department: string;
+  received_at: string;
+  has_attachment: boolean;
+}
+
+export interface InvoiceExtraction {
+  is_invoice: boolean;
+  classifier_confidence: number;
+  classifier_reasons: string[];
+  vendor_name?: string | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  po_number?: string | null;
+  total_amount?: string | null;
+  currency?: string | null;
+  raw_ocr_text?: string | null;
+}
+
+export interface ClassifyResult {
+  message_id: number;
+  subject: string;
+  is_invoice: boolean;
+  classifier_confidence: number;
+  classifier_reasons: string[];
+  extraction?: InvoiceExtraction | null;
+}
+
+export interface ClassifyAllResult {
+  total: number;
+  flagged_as_invoice: number;
+  results: ClassifyResult[];
+}
+
+export function fetchMailMessages(): Promise<MailMessageListItem[]> {
+  return request("/mailroom/messages");
+}
+
+export function classifyAllMail(): Promise<ClassifyAllResult> {
+  return request("/mailroom/classify-all", { method: "POST" });
+}
+
 export { ApiError };

@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
@@ -5,15 +7,36 @@ from app.access import can_manage_department_access, can_manage_target_level, vi
 from app.auth import hash_password
 from app.database import get_session
 from app.deps import get_current_user, require_min_level
-from app.models import Level, User, Workflow, WorkflowAccess
-from app.schemas import UserCreate, UserOut, UserUpdate, WorkflowAccessUpdate, WorkflowOut
-import json
+from app.models import AuditLog, Level, User, Workflow, WorkflowAccess
+from app.schemas import (
+    AuditLogOut,
+    UserCreate,
+    UserOut,
+    UserUpdate,
+    WorkflowAccessUpdate,
+    WorkflowOut,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # Anyone Senior Manager or above can reach these endpoints; individual
 # actions are further scoped by department/level inside each handler.
 _min_level_dep = require_min_level(Level.SENIOR_MANAGER)
+
+
+def _log(
+    session: Session, actor: User, action: str, target_type: str, target_id: int | None, detail: dict
+) -> None:
+    session.add(
+        AuditLog(
+            actor_user_id=actor.id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            detail=json.dumps(detail, default=str),
+        )
+    )
+    session.commit()
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -48,6 +71,16 @@ def create_user(
     session.add(new_user)
     session.commit()
     session.refresh(new_user)
+
+    _log(
+        session,
+        user,
+        "user.created",
+        "User",
+        new_user.id,
+        {"username": new_user.username, "department": new_user.department.value, "level": new_user.level.value},
+    )
+
     return UserOut.model_validate(new_user)
 
 
@@ -68,18 +101,27 @@ def update_user(
     if payload.level is not None and not can_manage_target_level(user, payload.level):
         raise HTTPException(status_code=403, detail="Not authorized to assign this level")
 
-    if payload.full_name is not None:
+    changes = {}
+    if payload.full_name is not None and payload.full_name != target.full_name:
+        changes["full_name"] = {"from": target.full_name, "to": payload.full_name}
         target.full_name = payload.full_name
-    if payload.level is not None:
+    if payload.level is not None and payload.level != target.level:
+        changes["level"] = {"from": target.level.value, "to": payload.level.value}
         target.level = payload.level
-    if payload.active is not None:
+    if payload.active is not None and payload.active != target.active:
+        changes["active"] = {"from": target.active, "to": payload.active}
         target.active = payload.active
     if payload.password:
+        changes["password"] = "changed"
         target.hashed_password = hash_password(payload.password)
 
     session.add(target)
     session.commit()
     session.refresh(target)
+
+    if changes:
+        _log(session, user, "user.updated", "User", target.id, {"username": target.username, "changes": changes})
+
     return UserOut.model_validate(target)
 
 
@@ -143,6 +185,7 @@ def set_user_access(
         raise HTTPException(status_code=400, detail=f"Workflow ids not in department: {sorted(invalid)}")
 
     existing = session.exec(select(WorkflowAccess).where(WorkflowAccess.user_id == user_id)).all()
+    before_ids = sorted(g.workflow_id for g in existing)
     for grant in existing:
         session.delete(grant)
     session.commit()
@@ -152,4 +195,54 @@ def set_user_access(
     session.commit()
 
     grants = session.exec(select(WorkflowAccess.workflow_id).where(WorkflowAccess.user_id == user_id))
-    return list(grants.all())
+    after_ids = sorted(grants.all())
+
+    _log(
+        session,
+        user,
+        "workflow_access.updated",
+        "User",
+        target.id,
+        {"username": target.username, "before": before_ids, "after": after_ids},
+    )
+
+    return after_ids
+
+
+@router.get("/audit-log", response_model=list[AuditLogOut])
+def get_audit_log(session: Session = Depends(get_session), user: User = Depends(_min_level_dep)):
+    depts = visible_departments(user)
+    manageable_depts = set(d for d in depts if can_manage_department_access(user, d))
+    if not manageable_depts:
+        raise HTTPException(status_code=403, detail="No departments manageable by this account")
+
+    entries = session.exec(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(500)).all()
+
+    if user.level == Level.ADMIN:
+        visible = entries
+    else:
+        # Non-admin: only show entries whose target user belongs to a
+        # department this account manages.
+        visible = []
+        for entry in entries:
+            if entry.target_type == "User" and entry.target_id is not None:
+                target = session.get(User, entry.target_id)
+                if target is not None and target.department in manageable_depts:
+                    visible.append(entry)
+
+    out = []
+    for entry in visible:
+        actor = session.get(User, entry.actor_user_id) if entry.actor_user_id else None
+        out.append(
+            AuditLogOut(
+                id=entry.id,
+                actor_user_id=entry.actor_user_id,
+                actor_name=actor.full_name if actor else "Unknown",
+                action=entry.action,
+                target_type=entry.target_type,
+                target_id=entry.target_id,
+                detail=entry.detail,
+                created_at=entry.created_at,
+            )
+        )
+    return out

@@ -21,6 +21,9 @@ export default function Layout() {
           <NavLink to="/exceptions" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             Exception Queue
           </NavLink>
+          <NavLink to="/mailroom" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+            Mailroom
+          </NavLink>
           {canSeeAdmin && (
             <NavLink to="/admin" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
               Access Management

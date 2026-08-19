@@ -1,11 +1,11 @@
-from pathlib import Path
-
 from sqlmodel import Session, SQLModel, create_engine
 
-DB_PATH = Path(__file__).resolve().parent.parent / "rpa_sap.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+from app.config import settings
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = settings.database_url
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 
 
 def init_db() -> None:
