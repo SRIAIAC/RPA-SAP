@@ -15,3 +15,5 @@ frontend/tsconfig.tsbuildinfo
 
 # Editor/OS
 .DS_Store
+backend/backend_run.log
+frontend/frontend_run.log
