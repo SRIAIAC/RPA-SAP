@@ -1,21 +1,18 @@
 import json
-import random
-import time
-from datetime import datetime
+from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.access import can_run_workflow, can_view_department_data, visible_departments
-from app.database import engine, get_session
+from app.audit import log_action
+from app.database import get_session
 from app.deps import get_current_user
-from app.models import ExceptionItem, RunStatus, User, Workflow, WorkflowRun
+from app.models import RunStatus, User, Workflow, WorkflowRun
 from app.schemas import RunOut
+from app.workflow_engine.simulated_engine import simulated_engine
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
-
-STEP_DELAY_SECONDS = 1.1
-EXCEPTION_PROBABILITY = 0.3
 
 
 def _run_to_out(run: WorkflowRun, workflow_name: str, triggered_by_name: str, total_steps: int) -> RunOut:
@@ -36,46 +33,12 @@ def _run_to_out(run: WorkflowRun, workflow_name: str, triggered_by_name: str, to
     )
 
 
-def _simulate_run(run_id: int, steps: list[str], exception_reasons: list[str]) -> None:
-    with Session(engine) as session:
-        run = session.get(WorkflowRun, run_id)
-        if run is None:
-            return
-        log = []
-        for idx, step in enumerate(steps, start=1):
-            time.sleep(STEP_DELAY_SECONDS)
-            log.append({"step": step, "index": idx, "ts": datetime.utcnow().isoformat(), "status": "done"})
-            run.current_step = idx
-            run.log_json = json.dumps(log)
-            session.add(run)
-            session.commit()
-
-        will_except = random.random() < EXCEPTION_PROBABILITY
-        run.finished_at = datetime.utcnow()
-        if will_except:
-            reason = random.choice(exception_reasons) if exception_reasons else "Unclassified exception"
-            run.status = RunStatus.EXCEPTION
-            run.result_summary = f"Exception raised: {reason}"
-            session.add(run)
-            session.add(
-                ExceptionItem(
-                    run_id=run.id,
-                    workflow_id=run.workflow_id,
-                    department=run.department,
-                    reason=reason,
-                )
-            )
-        else:
-            run.status = RunStatus.COMPLETED
-            run.result_summary = f"Completed successfully — {len(steps)} steps processed, no exceptions."
-            session.add(run)
-        session.commit()
-
-
 @router.post("", response_model=RunOut, status_code=status.HTTP_201_CREATED)
 def trigger_run(
     workflow_id: int,
     background_tasks: BackgroundTasks,
+    scenario: Optional[str] = None,
+    manual_input: Optional[dict[str, Any]] = Body(default=None),
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
@@ -96,9 +59,15 @@ def trigger_run(
     session.commit()
     session.refresh(run)
 
+    if manual_input:
+        log_action(
+            session, actor=user, action="workflow.manual_entry_submitted",
+            target_type="WorkflowRun", target_id=run.id,
+            detail={"workflow_key": workflow.key, "fields": manual_input},
+        )
+
     steps = json.loads(workflow.steps_json)
-    exceptions = json.loads(workflow.exception_reasons_json)
-    background_tasks.add_task(_simulate_run, run.id, steps, exceptions)
+    background_tasks.add_task(simulated_engine.run, run.id, scenario, manual_input)
 
     return _run_to_out(run, workflow.name, user.full_name, len(steps))
 

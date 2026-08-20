@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchDashboard, fetchRuns, fetchWorkflows, triggerRun } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import ManualEntryModal from "../components/ManualEntryModal";
 import RunStatusBadge from "../components/RunStatusBadge";
 import type { DashboardStats, Run, Workflow } from "../types";
 
@@ -13,6 +14,7 @@ export default function Dashboard() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [triggering, setTriggering] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [manualEntryWorkflow, setManualEntryWorkflow] = useState<Workflow | null>(null);
 
   async function refresh() {
     const [s, w, r] = await Promise.all([fetchDashboard(), fetchWorkflows(), fetchRuns()]);
@@ -42,6 +44,12 @@ export default function Dashboard() {
     } finally {
       setTriggering(null);
     }
+  }
+
+  function handleManualEntrySubmitted(run: Run) {
+    setManualEntryWorkflow(null);
+    refresh();
+    navigate(`/runs/${run.id}`);
   }
 
   const byDept = groupBy(workflows, (w) => w.department);
@@ -86,7 +94,9 @@ export default function Dashboard() {
               {wfs.map((wf) => (
                 <div className={`workflow-card ${wf.can_run ? "" : "locked"}`} key={wf.id}>
                   <div className="workflow-card-head">
-                    <span className="workflow-name">{wf.name}</span>
+                    <span className="workflow-name" style={{ cursor: "pointer" }} onClick={() => navigate(`/workflows/${wf.id}`)}>
+                      {wf.name}
+                    </span>
                     {!wf.can_run && <span className="lock-badge">No access</span>}
                   </div>
                   <p className="workflow-desc">{wf.description}</p>
@@ -94,13 +104,29 @@ export default function Dashboard() {
                     <span className="tag tag-sap">{wf.sap_systems}</span>
                     <span className="tag tag-nonsap">{wf.non_sap_systems}</span>
                   </div>
-                  <button
-                    className="btn-primary btn-block"
-                    disabled={!wf.can_run || triggering === wf.id}
-                    onClick={() => handleRun(wf.id)}
-                  >
-                    {triggering === wf.id ? "Starting…" : wf.can_run ? "Run now" : "Request access from Dept Head"}
-                  </button>
+                  {wf.can_run ? (
+                    <div className="exception-actions">
+                      <button
+                        className="btn-primary"
+                        style={{ flex: 1 }}
+                        disabled={triggering === wf.id}
+                        onClick={() => handleRun(wf.id)}
+                      >
+                        {triggering === wf.id ? "Starting…" : "Run now"}
+                      </button>
+                      <button
+                        className="btn-ghost"
+                        disabled={triggering === wf.id}
+                        onClick={() => setManualEntryWorkflow(wf)}
+                      >
+                        Enter manually
+                      </button>
+                    </div>
+                  ) : (
+                    <button className="btn-primary btn-block" disabled>
+                      Request access from Dept Head
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -148,6 +174,14 @@ export default function Dashboard() {
           </table>
         </div>
       </section>
+
+      {manualEntryWorkflow && (
+        <ManualEntryModal
+          workflow={manualEntryWorkflow}
+          onClose={() => setManualEntryWorkflow(null)}
+          onSubmitted={handleManualEntrySubmitted}
+        />
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings  # noqa: E402
 from app import models  # noqa: E402,F401  (import registers all tables on SQLModel.metadata)
+from app import models_platform  # noqa: E402,F401  (registers the new platform tables too)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

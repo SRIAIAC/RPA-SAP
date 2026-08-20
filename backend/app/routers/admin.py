@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.access import can_manage_department_access, can_manage_target_level, visible_departments
+from app.audit import log_action as _log
 from app.auth import hash_password
 from app.database import get_session
 from app.deps import get_current_user, require_min_level
@@ -22,21 +23,6 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # Anyone Senior Manager or above can reach these endpoints; individual
 # actions are further scoped by department/level inside each handler.
 _min_level_dep = require_min_level(Level.SENIOR_MANAGER)
-
-
-def _log(
-    session: Session, actor: User, action: str, target_type: str, target_id: int | None, detail: dict
-) -> None:
-    session.add(
-        AuditLog(
-            actor_user_id=actor.id,
-            action=action,
-            target_type=target_type,
-            target_id=target_id,
-            detail=json.dumps(detail, default=str),
-        )
-    )
-    session.commit()
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -221,14 +207,28 @@ def get_audit_log(session: Session = Depends(get_session), user: User = Depends(
     if user.level == Level.ADMIN:
         visible = entries
     else:
-        # Non-admin: only show entries whose target user belongs to a
-        # department this account manages.
+        # Non-admin: only show entries whose target belongs to a department
+        # this account manages. Each target_type resolves department
+        # differently — User has its own department field directly;
+        # WorkflowRun/ExceptionItem carry department directly too.
+        from app.models import ExceptionItem, WorkflowRun
+
         visible = []
         for entry in entries:
-            if entry.target_type == "User" and entry.target_id is not None:
+            if entry.target_id is None:
+                continue
+            entry_department = None
+            if entry.target_type == "User":
                 target = session.get(User, entry.target_id)
-                if target is not None and target.department in manageable_depts:
-                    visible.append(entry)
+                entry_department = target.department if target else None
+            elif entry.target_type == "WorkflowRun":
+                run = session.get(WorkflowRun, entry.target_id)
+                entry_department = run.department if run else None
+            elif entry.target_type == "ExceptionItem":
+                item = session.get(ExceptionItem, entry.target_id)
+                entry_department = item.department if item else None
+            if entry_department is not None and entry_department in manageable_depts:
+                visible.append(entry)
 
     out = []
     for entry in visible:

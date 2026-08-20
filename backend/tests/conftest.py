@@ -3,6 +3,12 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("APP_ENV", "development")
+# The full suite fires far more than 120 requests/minute through the shared
+# `app` instance (one RateLimitMiddleware, built once, state shared across
+# every test in the process). Keep it effectively disabled here; the
+# middleware's actual 429 behavior is verified in isolation in
+# test_rate_limit.py against its own tiny app.
+os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "1000000")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -11,7 +17,8 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
-import app.routers.runs as runs_module
+import app.events.handlers as event_handlers_module
+import app.workflow_engine.simulated_engine as simulated_engine_module
 from app.database import get_session
 from app.main import app
 from app.seed_data import seed
@@ -39,9 +46,14 @@ def _get_test_session():
 
 
 app.dependency_overrides[get_session] = _get_test_session
-# The workflow-run background task opens its own Session(engine) directly
-# (it can't use a FastAPI dependency), so point it at the test engine too.
-runs_module.engine = TEST_ENGINE
+# The workflow-run background task (SimulatedWorkflowEngine.run) opens its
+# own Session(engine) directly (it can't use a FastAPI dependency), so
+# point it at the test engine too. As of the Phase 7 refactor this lives in
+# app.workflow_engine.simulated_engine, not app.routers.runs.
+simulated_engine_module.engine = TEST_ENGINE
+# The EventBus handler that persists Event rows has the exact same
+# background/out-of-DI-graph seam — it opens Session(engine) itself.
+event_handlers_module.engine = TEST_ENGINE
 
 
 @pytest.fixture()

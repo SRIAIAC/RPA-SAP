@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
+from app.audit import log_action
 from app.auth import create_access_token, verify_password
 from app.database import get_session
 from app.deps import get_current_user
@@ -49,6 +50,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = D
     session.add(user)
     session.commit()
 
+    log_action(session, user, "auth.login", "User", user.id, {"username": user.username})
+
     token = create_access_token(subject=user.username)
     return LoginResponse(access_token=token, user=UserOut.model_validate(user))
 
@@ -56,3 +59,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = D
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return UserOut.model_validate(user)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(session: Session = Depends(get_session), user: User = Depends(get_current_user)):
+    # JWTs are stateless in this demo (no revocation/blocklist) — the token
+    # remains valid until it expires. This endpoint exists purely to record
+    # the audit trail entry; the frontend still discards the token locally.
+    log_action(session, user, "auth.logout", "User", user.id, {"username": user.username})

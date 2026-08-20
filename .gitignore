@@ -6,12 +6,27 @@ backend/rpa_sap.db
 backend/*.db
 backend/.env
 backend/app/data/invoices/
+backend/app/data/gmail_attachments/
+backend/app/data/uploaded_attachments/
 .pytest_cache/
+mock-systems/*/.venv/
+mock-systems/*/*.db
+mock-systems/*/.env
 
 # Node
 frontend/node_modules/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
+
+# Generated demo documents
+data/documents/
+
+# Docker
+.env
+
+# Postgres backups (scripts/backup_postgres.py) — may contain real user/audit
+# data in production; never committed.
+/backups/
 
 # Editor/OS
 .DS_Store
