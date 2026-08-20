@@ -1,13 +1,13 @@
 import json
 from datetime import datetime, time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.access import can_run_workflow, can_view_department_data, visible_departments
 from app.database import get_session
 from app.deps import get_current_user
-from app.models import ExceptionItem, ExceptionStatus, User, Workflow, WorkflowRun
+from app.models import ExceptionItem, ExceptionStatus, RunStatus, User, Workflow, WorkflowRun
 from app.schemas import DashboardStats, WorkflowOut
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
@@ -78,3 +78,44 @@ def dashboard(session: Session = Depends(get_session), user: User = Depends(get_
             )
         )
     return stats
+
+
+@router.get("/{workflow_id}")
+def get_workflow(workflow_id: int, session: Session = Depends(get_session), user: User = Depends(get_current_user)):
+    workflow = session.get(Workflow, workflow_id)
+    if workflow is None or workflow.department not in visible_departments(user):
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    from app.routers.runs import _run_to_out  # local import avoids a module-load-order cycle
+
+    recent = session.exec(
+        select(WorkflowRun).where(WorkflowRun.workflow_id == workflow.id).order_by(WorkflowRun.started_at.desc()).limit(20)
+    ).all()
+    steps = json.loads(workflow.steps_json)
+    recent_out = []
+    for run in recent:
+        if not can_view_department_data(user, run.department) and run.triggered_by_id != user.id:
+            continue
+        triggered_by = session.get(User, run.triggered_by_id)
+        recent_out.append(_run_to_out(run, workflow.name, triggered_by.full_name if triggered_by else "Unknown", len(steps)))
+
+    all_runs = session.exec(select(WorkflowRun).where(WorkflowRun.workflow_id == workflow.id)).all()
+    completed = len([r for r in all_runs if r.status == RunStatus.COMPLETED])
+    exceptions = len([r for r in all_runs if r.status == RunStatus.EXCEPTION])
+
+    return {
+        "id": workflow.id,
+        "key": workflow.key,
+        "name": workflow.name,
+        "department": workflow.department,
+        "description": workflow.description,
+        "sap_systems": workflow.sap_systems,
+        "non_sap_systems": workflow.non_sap_systems,
+        "steps": steps,
+        "exception_reasons": json.loads(workflow.exception_reasons_json),
+        "can_run": can_run_workflow(session, user, workflow),
+        "total_runs": len(all_runs),
+        "completed": completed,
+        "exceptions": exceptions,
+        "recent_runs": recent_out,
+    }

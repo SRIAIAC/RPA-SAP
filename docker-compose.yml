@@ -1,0 +1,148 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rpa_sap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rpa_sap}
+      POSTGRES_DB: ${POSTGRES_DB:-rpa_sap}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rpa_sap}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  mock-sap:
+    build: ./mock-systems/mock-sap
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      SEED_SCALE: ${SEED_SCALE:-full}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8100/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  mock-non-sap:
+    build: ./mock-systems/mock-non-sap
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      SEED_SCALE: ${SEED_SCALE:-full}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8200/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rpa_sap}:${POSTGRES_PASSWORD:-rpa_sap}@postgres:5432/${POSTGRES_DB:-rpa_sap}
+      MOCK_SAP_BASE_URL: http://mock-sap:8100
+      MOCK_NON_SAP_BASE_URL: http://mock-non-sap:8200
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      APP_ENV: ${APP_ENV:-development}
+      APP_MODE: ${APP_MODE:-demo}
+      RPA_SAP_SECRET_KEY: ${RPA_SAP_SECRET_KEY:-dev-only-secret-change-me}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
+      GMAIL_ADDRESS: ${GMAIL_ADDRESS:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-sap:
+        condition: service_healthy
+      mock-non-sap:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost: nginx only `listen`s on IPv4, but
+      # /etc/hosts inside the container resolves "localhost" to ::1 first,
+      # so wget would connection-refuse against the IPv6 loopback.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+
+  # Optional TLS-terminating reverse proxy in front of `frontend`. Not part
+  # of the default `docker compose up` (see the "tls" profile below) so the
+  # offline demo path never needs ports 80/443 or a domain. Enable with:
+  #   docker compose --profile tls up -d
+  # See PRODUCTION.md for details (DOMAIN env var, cert behavior).
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["tls"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

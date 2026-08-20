@@ -132,6 +132,14 @@ class MailMessage(SQLModel, table=True):
     department: Department
     received_at: datetime = Field(default_factory=datetime.utcnow)
     has_attachment: bool = Field(default=False)
+    # "seed" (the 15 synthetic demo emails) | "gmail_import" (real mail
+    # pulled in read-only via app/services/gmail_import.py, for testing the
+    # classifier/OCR pipeline against real data).
+    source: str = Field(default="seed")
+    # IMAP Message-ID header for gmail_import rows, used to skip re-importing
+    # a message already pulled in on a later import call. Always NULL for
+    # seeded rows (multiple NULLs are fine under a unique index).
+    external_id: Optional[str] = Field(default=None, unique=True, index=True)
 
 
 class MailAttachment(SQLModel, table=True):

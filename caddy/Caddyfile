@@ -1,0 +1,13 @@
+# Reverse proxy + TLS termination in front of the frontend container.
+#
+# DOMAIN defaults to "localhost": Caddy detects that isn't a publicly
+# resolvable name and automatically issues a locally-trusted self-signed
+# certificate (no ACME/DNS/public IP required) — so this works out of the
+# box for a purely internal/on-prem deployment. Set DOMAIN to a real
+# hostname (e.g. ops.example.com) to get a real Let's Encrypt certificate
+# instead; Caddy handles the ACME flow automatically as long as ports 80/443
+# are reachable from the internet for that domain.
+{$DOMAIN:localhost} {
+	reverse_proxy frontend:80
+	encode gzip
+}

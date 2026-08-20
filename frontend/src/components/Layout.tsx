@@ -24,10 +24,30 @@ export default function Layout() {
           <NavLink to="/mailroom" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             Mailroom
           </NavLink>
+          <NavLink to="/system-health" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+            System Health
+          </NavLink>
           {canSeeAdmin && (
-            <NavLink to="/admin" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-              Access Management
-            </NavLink>
+            <>
+              <NavLink to="/analytics" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+                Analytics
+              </NavLink>
+              <NavLink to="/integrations" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+                Integration Monitor
+              </NavLink>
+              <NavLink to="/ai-decisions" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+                AI Decisions
+              </NavLink>
+              <NavLink to="/demo-scenarios" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+                Demo Scenarios
+              </NavLink>
+              <NavLink to="/audit-log" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+                Audit Log
+              </NavLink>
+              <NavLink to="/admin" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+                Access Management
+              </NavLink>
+            </>
           )}
         </nav>
         <div className="sidebar-footer">Oil &amp; Gas RPA/SAP Demo</div>

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { fetchExceptions, resolveException } from "../api";
 import type { ExceptionItem } from "../types";
 
 export default function ExceptionsPage() {
+  const navigate = useNavigate();
   const [items, setItems] = useState<ExceptionItem[]>([]);
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -61,6 +63,9 @@ export default function ExceptionsPage() {
               <button className="btn-primary" disabled={busyId === item.id} onClick={() => handleResolve(item.id)}>
                 {busyId === item.id ? "Resolving…" : "Mark resolved"}
               </button>
+              <Link to={`/exceptions/${item.id}`} className="btn-ghost">
+                View full trace
+              </Link>
             </div>
           </div>
         ))}
@@ -82,7 +87,7 @@ export default function ExceptionsPage() {
               </thead>
               <tbody>
                 {resolved.map((item) => (
-                  <tr key={item.id}>
+                  <tr key={item.id} className="row-clickable" onClick={() => navigate(`/exceptions/${item.id}`)}>
                     <td>{item.workflow_name}</td>
                     <td>{item.department}</td>
                     <td>{item.reason}</td>

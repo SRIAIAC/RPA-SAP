@@ -212,10 +212,20 @@ EMAILS = [
 
 
 def seed_mailroom(session: Session) -> None:
+    # Regenerate the invoice PNGs unconditionally (each file is itself
+    # idempotent - generate_all_invoices() only draws a file if it's
+    # missing). This must NOT be gated by the DB-seeded check below: with
+    # Postgres persisted across container recreations (docker-compose.yml's
+    # postgres_data volume) but the backend container's filesystem is not,
+    # a fresh backend container can start with MailMessage rows already in
+    # the DB while /app/app/data/invoices/ is empty - skipping generation
+    # here would leave MailAttachment rows pointing at files that don't
+    # exist, breaking attachment viewing and OCR extraction.
+    generate_all_invoices()
+
     if session.exec(select(MailMessage)).first() is not None:
         return  # already seeded
 
-    generate_all_invoices()
     spec_by_filename = {spec["filename"]: spec for spec in INVOICES}
 
     for email in EMAILS:

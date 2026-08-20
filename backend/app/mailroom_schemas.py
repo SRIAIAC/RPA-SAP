@@ -23,6 +23,7 @@ class MailMessageListOut(BaseModel):
     department: Department
     received_at: datetime
     has_attachment: bool
+    source: str
 
     class Config:
         from_attributes = True
@@ -50,6 +51,7 @@ class MailMessageDetailOut(BaseModel):
     department: Department
     received_at: datetime
     has_attachment: bool
+    source: str
     attachment: Optional[AttachmentOut] = None
     extraction: Optional[InvoiceExtractionOut] = None
 
@@ -70,3 +72,9 @@ class ClassifyAllOut(BaseModel):
     total: int
     flagged_as_invoice: int
     results: List[ClassifyResultOut]
+
+
+class ImportGmailOut(BaseModel):
+    imported: int
+    skipped_duplicates: int
+    total_fetched: int

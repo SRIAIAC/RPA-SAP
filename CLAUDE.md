@@ -2,7 +2,51 @@
 
 Context for Claude Code (or any agent) working in this repository.
 
-## What this is
+## Platform upgrade (read this first)
+
+This repo was upgraded from the single-service prototype described below
+into a full **AI-Powered Oil & Gas Automation Operations Platform** — see
+`README.md` for the complete architecture writeup (provider/adapter
+interfaces, mock SAP/non-SAP microservices, business rules engine, AI/RPA/
+event-bus providers, workflow engine rewrite, Docker Compose). Everything
+below this section still describes the original prototype accurately (it
+was preserved, not replaced) — read both.
+
+Critical things a future session needs to know before touching this repo:
+
+- **Three separate services, each named `app`.** `backend/`,
+  `mock-systems/mock-sap/`, `mock-systems/mock-non-sap/` each have their own
+  venv and their own `app` package. Never try to import two of them into the
+  same Python process (`sys.modules["app"]` collision) — `scripts/seed_demo.py`
+  shells out to each service's own venv for exactly this reason.
+- **The workflow-run background-task engine seam.** `SimulatedWorkflowEngine.run()`
+  (`backend/app/workflow_engine/simulated_engine.py`) opens its own
+  `Session(engine)` because it runs as a `BackgroundTasks` callable outside
+  FastAPI's DI graph. `tests/conftest.py` patches
+  `app.workflow_engine.simulated_engine.engine = TEST_ENGINE` — if you ever
+  move this function, update that patch too, or tests will silently hit the
+  real dev database. The `EventBus` handler
+  (`app/events/handlers.py::persist_event_handler`) has the identical seam,
+  patched the same way in the same conftest.
+- **Workflow recipes now call live mock services over HTTP.** Every one of
+  the 15 workflows (`app/workflow_engine/recipes/*.py`) makes real calls to
+  `mock-sap`/`mock-non-sap`. Integration-level tests are marked
+  `@pytest.mark.integration` and skip themselves via a live `/api/health`
+  ping if those services aren't running — start them
+  (`uvicorn app.main:app --port 8100` / `--port 8200` in their respective
+  dirs) before running the full suite, or those tests no-op.
+- **Golden-scenario fixture IDs are hardcoded and cross-referenced across
+  services.** `mock-sap`'s `app/seed/generate_synthetic_data.py` and
+  `mock-non-sap`'s counterpart share fixed business keys
+  (`GOLDEN_EQUIPMENT_ID = "EQ-GOLDEN-PUMP-01"`,
+  `GOLDEN_CRUDE_PO_NUMBER = "PO-GOLDEN-CRUDE"`, `PO-GOLDEN-01..05`,
+  `INV-GOLDEN-01..05`, `CTR-GOLDEN-01`) by convention, not by any shared
+  import — if you change one side, update the other.
+- **Docker backend image installs Tesseract** (`apt-get install tesseract-ocr`)
+  so the Mailroom OCR feature works identically to local dev; the mock
+  service images don't need it.
+
+## What this is (original prototype)
 
 **RPA/SAP Ops Console — Oil & Gas Demo.** A prototype RPA console for
 middle-management, sitting across SAP and non-SAP applications. Managers
